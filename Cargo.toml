@@ -1,0 +1,33 @@
+[package]
+name = "lantern"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.81"
+candle-core = { git = "https://github.com/huggingface/candle.git" }
+candle-nn = { git = "https://github.com/huggingface/candle.git" }
+candle-transformers = { git = "https://github.com/huggingface/candle.git" }
+crossbeam = { version = "0.8.4", features = ["crossbeam-channel"] }
+env_logger = "0.11.3"
+hf-hub = "0.3.2"
+log = "0.4.21"
+rand = "0.8.5"
+serde = "1.0.197"
+tokenizers = "0.15.2"
+
+[features]
+default = []
+cuda = [
+    "candle-core/cuda", 
+    "candle-nn/cuda",
+    "candle-transformers/cuda"
+    ]
+cudnn = [    
+    "candle-core/cudnn", 
+]
+metal = [
+    "candle-core/metal", 
+    "candle-nn/metal",
+    "candle-transformers/metal", 
+    ]
