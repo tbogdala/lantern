@@ -56,6 +56,11 @@ pub struct TextGenerationParams {
     /// seed this appropriately if deterministic behavior is not desired.
     pub seed: u64,
 
+    /// This is a collection of strings that will stop the generation of text. Note: they will not get removed
+    /// from the generated string, because the individual tokens have already been sent out, and it will
+    /// be the client code's responsibility to remove it from the whole string.
+    pub stop_strings: Vec<String>,
+
     /// The text prompt to initialize the text generator with as its context for generating a response.
     pub user_prompt: String,
 }
@@ -70,6 +75,7 @@ impl Default for TextGenerationParams {
             repeat_penalty: 1.05,
             repeat_last_n: 64,
             seed: 42,
+            stop_strings: Vec::new(),
             user_prompt: "".into(),
         }
     }
@@ -345,6 +351,30 @@ fn worker_generate_text(
         if next_token == eos_token {
             break;
         };
+
+        // are we checking for additional stop strings?
+        if !params.stop_strings.is_empty(){
+            // decode a partial string of the response to see if any of the stop_strings match
+            const STOPWORD_CHECK_DISTANCE: usize = 32;
+            let last_few_tokens = &all_tokens[all_tokens.len().saturating_sub(STOPWORD_CHECK_DISTANCE)..];
+            let last_few_tokens_string = tokenizer.decode(last_few_tokens, true)
+                .map_err(anyhow::Error::msg)
+                .context("Decodng last few tokens to check for stop strings");
+            if let Ok(last_few_decoded) = last_few_tokens_string {
+                let mut halt_generation = false;
+                for stopper in &params.stop_strings {
+                    if last_few_decoded.ends_with(stopper) {
+                        debug!("Stop string \"{}\" found. Halting text generation", stopper);
+                        halt_generation = true;
+                        break;
+                    }
+                }
+                if halt_generation {
+                    break;
+                }
+            }
+        }
+
     }
     let dt = start_post_prompt.elapsed();
     debug!(
@@ -367,7 +397,7 @@ fn worker_generate_text(
     // }
 
     let whole_string = tokenizer
-        .decode(&all_tokens[00..all_tokens.len().saturating_sub(1)], false)
+        .decode(&all_tokens[00..all_tokens.len()], false)
         .map_err(anyhow::Error::msg)
         .context("Decoding the predicted text");
 

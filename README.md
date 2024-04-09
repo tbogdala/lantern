@@ -28,6 +28,22 @@ If you have a Mac, build with the `metal` feature instead and use that for runni
 Those without the ability to run either `metal` or `cuda` should still be able to compile and run
 the library in CPU mode.
 
+## Running Examples
+
+Examples can be run simply through cargo. Both examples and tests be configured to look at environment variables
+for the models to use. For example the following four environment variables can override the default settings
+in examples and tests:
+
+* `LANTERN_MODEL_ID`: the huggingface model repo id to use
+* `LANTERN_MODEL_FILE`: the file name within the model repo to download
+* `LANTERN_TOKENIZER_ID`: the huggingface repo id that has the `tokenizer.json` file for the model
+* `LANTERN_EOS_STRING`: the EOS string to detect end of prediction; must be able to be tokenized.
+
+The following is how to run the basic example with `cuda` accelleration; switch to `metal` on Mac.
+
+```bash
+cargo run --example basic --release --features cuda
+```
 
 ## Running Tests
 
@@ -53,6 +69,7 @@ RUST_LOG=debug cargo test --release --features cuda -- --nocapture
 - [ ] Keep last used model in memory
 - [ ] Add grammar support to sampling a la llama.cpp 
 - [ ] Attempt to add controllable number of layers to offload to GPU
+- [ ] Batch the incoming prompt
 
 (... and so much more ...)
 
