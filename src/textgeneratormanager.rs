@@ -5,7 +5,6 @@ use anyhow::{anyhow, Context, Result};
 
 use candle_core::quantized::gguf_file;
 use candle_core::{Device, Tensor};
-use candle_transformers::models::quantized_llama as model;
 use crossbeam::channel::{Receiver, Sender};
 use hf_hub::api::sync::Api;
 use log::{debug, error, warn};
@@ -61,6 +60,11 @@ pub struct TextGenerationParams {
     /// be the client code's responsibility to remove it from the whole string.
     pub stop_strings: Vec<String>,
 
+    /// This specifies the size of the chunks to cut the prompt token slice into for processing.
+    /// Typically in GPU accellerated use, values of 256 or 512 work well. For CPU use, pick something
+    /// much smaller to test with, such as 8.
+    pub batch_size: usize,
+
     /// The text prompt to initialize the text generator with as its context for generating a response.
     pub user_prompt: String,
 }
@@ -76,6 +80,7 @@ impl Default for TextGenerationParams {
             repeat_last_n: 64,
             seed: 42,
             stop_strings: Vec::new(),
+            batch_size: 256,
             user_prompt: "".into(),
         }
     }
@@ -255,7 +260,7 @@ fn worker_generate_text(
         .context("Attempting to open the model weights file")?;
     let model =
         gguf_file::Content::read(&mut file).context("Attempting to read the model weights file")?;
-    let mut model = model::ModelWeights::from_gguf(model, &mut file, &device)
+    let mut model = crate::quantized_llama::QuantizedLlama::from_gguf(model, &mut file, &device)
         .context("Processing model weights")?;
     debug!("Model built successfully.");
 
@@ -303,14 +308,21 @@ fn worker_generate_text(
 
     let start_prompt_processing = std::time::Instant::now();
 
-    // process prompt in one shot
-    let input = Tensor::new(prompt_tokens, &device)?.unsqueeze(0)?;
-    let logits = model.forward(&input, 0)?;
-    let logits = logits.squeeze(0)?;
+    // process prompt in batch sizes
+    let mut last_logits: Option<Tensor> = None;
+    let mut process_count = 0;
+    let total_chunks = prompt_tokens.len() / params.batch_size + 1;
+    for (i, prompt_chunk) in prompt_tokens.chunks(params.batch_size).enumerate() {
+        debug!("Processing prompt batch #{} of {}", i+1, total_chunks);
+        let input = Tensor::new(prompt_chunk, &device)?.unsqueeze(0)?;
+        let logits = model.forward(&input, process_count)?;
+        last_logits = Some(logits.squeeze(0)?);
+        process_count += prompt_chunk.len();
+    }
     debug!("Finished prompt processing");
 
     // prime the loop with a single token generation
-    let mut next_token = logits_processor.sample(params, &logits)?;
+    let mut next_token = logits_processor.sample(params, &last_logits.unwrap())?;
     all_tokens.push(next_token);
     let prompt_dt = start_prompt_processing.elapsed();
     debug!("Loop primed with prompt logits.");
@@ -353,11 +365,13 @@ fn worker_generate_text(
         };
 
         // are we checking for additional stop strings?
-        if !params.stop_strings.is_empty(){
+        if !params.stop_strings.is_empty() {
             // decode a partial string of the response to see if any of the stop_strings match
             const STOPWORD_CHECK_DISTANCE: usize = 32;
-            let last_few_tokens = &all_tokens[all_tokens.len().saturating_sub(STOPWORD_CHECK_DISTANCE)..];
-            let last_few_tokens_string = tokenizer.decode(last_few_tokens, true)
+            let last_few_tokens =
+                &all_tokens[all_tokens.len().saturating_sub(STOPWORD_CHECK_DISTANCE)..];
+            let last_few_tokens_string = tokenizer
+                .decode(last_few_tokens, true)
                 .map_err(anyhow::Error::msg)
                 .context("Decodng last few tokens to check for stop strings");
             if let Ok(last_few_decoded) = last_few_tokens_string {
@@ -374,7 +388,6 @@ fn worker_generate_text(
                 }
             }
         }
-
     }
     let dt = start_post_prompt.elapsed();
     debug!(
