@@ -177,12 +177,6 @@ checksum = "9e1b586273c5702936fe7b7d6896644d8be71e6314cfe09d3167c95f712589e8"
 
 [[package]]
 name = "base64"
-version = "0.21.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9d297deb1925b89f2ccc13d7635fa0714f12c87adce1c75356b39ca9b7178567"
-
-[[package]]
-name = "base64"
 version = "0.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9475866fec1451be56a3c2400fd081ff546538961565ccb5b7142cbd22bc7a51"
@@ -296,7 +290,7 @@ checksum = "514de17de45fdb8dc022b1a7975556c53c86f9f0aa5f534b98977b171857c2c9"
 [[package]]
 name = "candle-core"
 version = "0.5.0"
-source = "git+https://github.com/huggingface/candle.git#8a05743a21768405217576a1b9557936be74ed90"
+source = "git+https://github.com/huggingface/candle.git#cfab6e761696c18b1ce5d3a339ab57ef191ca749"
 dependencies = [
  "byteorder",
  "candle-kernels",
@@ -320,7 +314,7 @@ dependencies = [
 [[package]]
 name = "candle-kernels"
 version = "0.5.0"
-source = "git+https://github.com/huggingface/candle.git#8a05743a21768405217576a1b9557936be74ed90"
+source = "git+https://github.com/huggingface/candle.git#cfab6e761696c18b1ce5d3a339ab57ef191ca749"
 dependencies = [
  "bindgen_cuda",
 ]
@@ -328,7 +322,7 @@ dependencies = [
 [[package]]
 name = "candle-metal-kernels"
 version = "0.5.0"
-source = "git+https://github.com/huggingface/candle.git#8a05743a21768405217576a1b9557936be74ed90"
+source = "git+https://github.com/huggingface/candle.git#cfab6e761696c18b1ce5d3a339ab57ef191ca749"
 dependencies = [
  "metal",
  "once_cell",
@@ -339,7 +333,7 @@ dependencies = [
 [[package]]
 name = "candle-nn"
 version = "0.5.0"
-source = "git+https://github.com/huggingface/candle.git#8a05743a21768405217576a1b9557936be74ed90"
+source = "git+https://github.com/huggingface/candle.git#cfab6e761696c18b1ce5d3a339ab57ef191ca749"
 dependencies = [
  "candle-core",
  "candle-metal-kernels",
@@ -355,7 +349,7 @@ dependencies = [
 [[package]]
 name = "candle-transformers"
 version = "0.5.0"
-source = "git+https://github.com/huggingface/candle.git#8a05743a21768405217576a1b9557936be74ed90"
+source = "git+https://github.com/huggingface/candle.git#cfab6e761696c18b1ce5d3a339ab57ef191ca749"
 dependencies = [
  "byteorder",
  "candle-core",
@@ -2509,9 +2503,9 @@ dependencies = [
 
 [[package]]
 name = "rustls-pki-types"
-version = "1.4.1"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ecd36cc4259e3e4514335c4a138c6b43171a8d61d8f5c9348f9fc7529416f247"
+checksum = "beb461507cee2c2ff151784c52762cf4d9ff6a61f3e80968600ed24fa837fa54"
 
 [[package]]
 name = "rustls-webpki"
@@ -3205,11 +3199,11 @@ checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
 
 [[package]]
 name = "ureq"
-version = "2.9.6"
+version = "2.9.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "11f214ce18d8b2cbe84ed3aa6486ed3f5b285cf8d8fbdbce9f3f767a724adc35"
+checksum = "d11a831e3c0b56e438a28308e7c810799e3c118417f342d30ecec080105395cd"
 dependencies = [
- "base64 0.21.7",
+ "base64 0.22.0",
  "flate2",
  "log",
  "native-tls",
@@ -3393,9 +3387,9 @@ checksum = "53a85b86a771b1c87058196170769dd264f66c0782acf1ae6cc51bfd64b39082"
 
 [[package]]
 name = "winapi-util"
-version = "0.1.7"
+version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "134306a13c5647ad6453e8deaec55d3a44d6021970129e6188735e74bf546697"
+checksum = "4d4cc384e1e73b93bafa6fb4f1df8c41695c8a91cf9c4c64358067d15a7b6c6b"
 dependencies = [
  "windows-sys 0.52.0",
 ]

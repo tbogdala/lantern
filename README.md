@@ -15,6 +15,8 @@ The dependences for Candle are snagged straight from git for now while
 - [x] More robust LLM sampling with `TextGeneratorSampler`
 - [x] Enhanced quantized llama handling compared to candle's impelmentation: can processed prompts in 
       batches, max context length is pulled from the gguf file.
+- [x] Easier abstraction to use image generators based on stable diffusion. Currently supports
+      SD v1.5 and SDXL Turbo.
 
 
 ## Buiding From Source
@@ -43,10 +45,38 @@ in examples and tests:
 * `LANTERN_TOKENIZER_ID`: the huggingface repo id that has the `tokenizer.json` file for the model
 * `LANTERN_EOS_STRING`: the EOS string to detect end of prediction; must be able to be tokenized.
 
+
+### Basic Text Generation
+
 The following is how to run the basic example with `cuda` accelleration; switch to `metal` on Mac.
 
 ```bash
 cargo run --example basic --release --features cuda
+```
+
+Should you wish to use a prompt in a file, and you use an OS with a real shell, you can pass the
+prompt in as `--prompt "$(cat ~/test_prompt.txt)"`. If it's long, you can even batch process the prompts
+with the `--batch-size` parameter. All together, it might look like this:
+
+```bash
+cargo run --example basic --release --features cuda -- --prompt "$(cat ~/long_test_prompt.txt)" --batch-size 256
+```
+
+
+### Basic Image Generation
+
+The diffusion example takes a few more parameters to get right. If you specify the same `--save-as` output file, the example will save
+the new generation with an iteration number on the filename. The sample defaults to using `SDXL Turbo` at it's trained size
+of 512x512. `--cfg` should be left at 0.0 and it's trained to work on `--steps` values of 1, 2, 3 or 4.
+
+```bash
+cargo run --release --features cuda --example diffusion -- -p "A surreal three-quarter angle photograph of a genius husky dog, wearing glasses, in a spacesuit, taking a picture for a photo ID. Hi-tech equipment. Derpy husky drama face." --steps 3 --save-as "out-images/husky-id.png"
+```
+
+If you want to see what Stable Diffusion 1.5 looked like stock, you can send the same prompt but give more `--steps` (30-50) and change the `--cfg` to something other than zero (~7.5).
+
+```bash
+cargo run --release --features cuda --example diffusion -- -p "A surreal three-quarter angle photograph of a genius husky dog, wearing glasses, in a spacesuit, taking a picture for a photo ID. Hi-tech equipment. Derpy husky drama face." --steps 30 --cfg 5.5 --sd-ver v1-5 --save-as "out-images/husky-id.png"
 ```
 
 

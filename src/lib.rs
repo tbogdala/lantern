@@ -30,9 +30,13 @@
 //! }
 //!```
 
+mod diffusion;
 mod quantized_llama;
 mod textgeneratormanager;
 mod textgeneratorsampler;
+
+pub use diffusion::StableDiffusionVersion;
+pub use diffusion::DiffusionConfig;
 
 pub use textgeneratormanager::TextGenUpdate;
 pub use textgeneratormanager::TextGenerationParams;
