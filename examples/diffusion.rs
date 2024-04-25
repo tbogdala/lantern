@@ -11,9 +11,17 @@ use hf_hub::api::sync::Api;
 use log::{debug, info};
 use tokenizers::Tokenizer;
 
+#[derive(Debug, Clone, Copy, clap::ValueEnum, PartialEq, Eq)]
+enum StableDiffusionVersion {
+    V1_5,
+    Turbo,
+}
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
+    #[arg(long, value_enum, default_value = "Turbo")]
+    sd_ver: StableDiffusionVersion,
+
     #[arg(short, long)]
     prompt: Option<String>,
 
@@ -23,11 +31,11 @@ struct Args {
     #[arg(short, long)]
     seed: Option<u32>,
 
-    #[arg(long, default_value_t = 0.0)]
-    cfg: f64,
+    #[arg(long)]
+    cfg: Option<f64>,
 
-    #[arg(long, default_value_t = 1)]
-    steps: usize,
+    #[arg(long)]
+    steps: Option<usize>,
 
     #[arg(long, default_value_t = 512)]
     height: usize,
@@ -54,6 +62,7 @@ pub struct DiffusionConfig {
     pub height: usize,
     pub width: usize,
     inner_config: StableDiffusionConfig,
+    sd_ver: StableDiffusionVersion,
     pub steps: usize,
     pub tokenizer1: RepoIdAndFile,
     pub tokenizer2: RepoIdAndFile,
@@ -67,11 +76,50 @@ pub struct DiffusionConfig {
 }
 impl DiffusionConfig {
     /// creates a new configuration set for SDXL Turbo use. This model is tuned for 512x512.
+    pub fn new_sd15(height: usize, width: usize, steps: usize, device: Device) -> Self {
+        Self {
+            height,
+            width,
+            inner_config: StableDiffusionConfig::v1_5(None, Some(height), Some(width)),
+            sd_ver: StableDiffusionVersion::V1_5,
+            steps,
+            tokenizer1: (
+                "openai/clip-vit-base-patch32".to_owned(),
+                "tokenizer.json".to_owned(),
+            ),
+            tokenizer2: (
+                "laion/CLIP-ViT-bigG-14-laion2B-39B-b160k".to_owned(),
+                "tokenizer.json".to_owned(),
+            ),
+            clip1: (
+                "runwayml/stable-diffusion-v1-5".to_owned(),
+                "text_encoder/model.fp16.safetensors".to_owned(),
+            ),
+            clip2: (
+                "runwayml/stable-diffusion-v1-5".to_owned(),
+                "text_encoder_2/model.fp16.safetensors".to_owned(),
+            ),
+            vae: (
+                "runwayml/stable-diffusion-v1-5".to_owned(),
+                "vae/diffusion_pytorch_model.fp16.safetensors".to_owned(),
+            ),
+            model: (
+                "runwayml/stable-diffusion-v1-5".to_owned(),
+                "unet/diffusion_pytorch_model.fp16.safetensors".to_owned(),
+            ),
+            device,
+            dtype: DType::F16,
+            vae_scale: 0.18215,
+        }
+    }
+    
+    /// creates a new configuration set for SDXL Turbo use. This model is tuned for 512x512.
     pub fn new_sdxl_turbo(height: usize, width: usize, steps: usize, device: Device) -> Self {
         Self {
             height,
             width,
             inner_config: StableDiffusionConfig::sdxl_turbo(None, Some(height), Some(width)),
+            sd_ver: StableDiffusionVersion::Turbo,
             steps,
             tokenizer1: (
                 "openai/clip-vit-large-patch14".to_owned(),
@@ -107,23 +155,29 @@ impl DiffusionConfig {
         Ok(self.inner_config.build_scheduler(self.steps)?)
     }
 
-    pub fn build_text_encoders(&self, prompt: &str, uncond_prompt: &str) -> Result<Tensor> {
+    pub fn build_text_encoders(&self, prompt: &str, uncond_prompt: &str, cfg: f64) -> Result<Tensor> {
         let embeddings1 = self.text_embeddings(
             prompt,
             uncond_prompt,
+            cfg,
             &self.tokenizer1,
             &self.clip1,
             Some(&self.inner_config.clip),
         )?;
-        let embeddings2 = self.text_embeddings(
-            prompt,
-            uncond_prompt,
-            &self.tokenizer2,
-            &self.clip2,
-            self.inner_config.clip2.as_ref(),
-        )?;
-        let embeddings = Tensor::cat(&[embeddings1, embeddings2], D::Minus1)?;
-        Ok(embeddings)
+
+        if self.sd_ver == StableDiffusionVersion::V1_5 {
+            Ok(embeddings1)
+         } else {
+            let embeddings2 = self.text_embeddings(
+                prompt,
+                uncond_prompt,
+                cfg,
+                &self.tokenizer2,
+                &self.clip2,
+                self.inner_config.clip2.as_ref(),
+            )?;
+            Ok(Tensor::cat(&[embeddings1, embeddings2], D::Minus1)?)
+        } 
     }
 
     pub fn build_vae(&self) -> Result<AutoEncoderKL> {
@@ -202,7 +256,8 @@ impl DiffusionConfig {
     fn text_embeddings(
         &self,
         prompt: &str,
-        _uncond_prompt: &str,
+        uncond_prompt: &str,
+        cfg: f64,
         tokenizer_id_and_file: &RepoIdAndFile,
         clip_id_and_file: &RepoIdAndFile,
         clip_config: Option<&clip::Config>,
@@ -243,8 +298,30 @@ impl DiffusionConfig {
             DType::F32,
         )?;
         let text_embeddings = text_model.forward(&tokens)?;
-        let text_embeddings = text_embeddings.to_dtype(self.dtype)?;
-        Ok(text_embeddings)
+        if cfg > 0.0 {
+            let mut uncond_tokens = tokenizer
+                .encode(uncond_prompt, true)
+                .map_err(anyhow::Error::msg)?
+                .get_ids()
+                .to_vec();
+            if uncond_tokens.len() > self.inner_config.clip.max_position_embeddings {
+                return Err(anyhow!(
+                    "the negative prompt is too long, {} > max-tokens ({})",
+                    uncond_tokens.len(),
+                    self.inner_config.clip.max_position_embeddings
+                ));
+            }
+            while uncond_tokens.len() < self.inner_config.clip.max_position_embeddings {
+                uncond_tokens.push(pad_id);
+            }
+
+            let uncond_tokens = Tensor::new(uncond_tokens.as_slice(), &self.device)?.unsqueeze(0)?;
+            let uncond_embeddings = text_model.forward(&uncond_tokens)?;
+
+            Ok(Tensor::cat(&[uncond_embeddings, text_embeddings], 0)?.to_dtype(self.dtype)?)
+        } else {
+            Ok(text_embeddings.to_dtype(self.dtype)?)
+        } 
     }
 }
 
@@ -277,15 +354,42 @@ fn main() {
     );
     device.set_seed(seed as u64).unwrap();
 
-    let _guidance_scale = args.cfg;
-    let steps = args.steps;
-    let output_filename = get_available_filename(args.save_as.as_str()).unwrap();
+    // default cfg to 0.0 for Turbo, 7.5 for everything else, or use specfied parameter
+    let guidance_scale = if let Some(cfg) = args.cfg {
+        cfg
+    } else {
+        if args.sd_ver == StableDiffusionVersion::Turbo {
+            0.0
+        } else {
+            7.5
+        }
+    };
+
+    // default steps value to 1 for Tubo and 30 for everything else, or use specified parameter
+    let steps = if let Some(s) = args.steps {
+        s
+    } else {
+        if args.sd_ver == StableDiffusionVersion::Turbo {
+            1
+        } else {
+            30
+        }
+    };
+
+    // pull the prompts in from the command line or suprise the user with a default one.
     let prompt = args
         .prompt
         .unwrap_or("A giant red crustacean on a beach. Highly stylized.".to_owned());
     let uncond_prompt = args.uncond_prompt;
+    
+    // we do a little fancy work with the filename to put iteration numbers at the
+    // end of the filename passed in as a parameter if that one already exists.
+    let output_filename = get_available_filename(args.save_as.as_str()).unwrap();
     info!("Output filename: {:?}", output_filename);
 
+    // clamp the img2img strength values to the valid range; 1.0 will essentially create
+    // a whole new image because it'll all be noised out, while 0.0 will essentially return
+    // the original image.
     let img_strength = args.img_strength.clamp(0.0, 1.0);
     let img2img = args.img2img;
     if let Some(source_file) = &img2img {
@@ -295,20 +399,23 @@ fn main() {
         );
     }
 
-    let new_config =
-        DiffusionConfig::new_sdxl_turbo(args.height, args.width, steps, device.clone());
-    let scheduler = new_config.build_scheduler().unwrap();
+    let config = match args.sd_ver {
+        StableDiffusionVersion::V1_5 => DiffusionConfig::new_sd15(args.height, args.width, steps, device.clone()),
+        StableDiffusionVersion::Turbo => DiffusionConfig::new_sdxl_turbo(args.height, args.width, steps, device.clone())
+    };
+
+    let scheduler = config.build_scheduler().unwrap();
 
     info!("Building the clip transformers and tokenizing the prompts.");
-    let prompt_embeddings = new_config
-        .build_text_encoders(prompt.as_str(), uncond_prompt.as_str())
+    let prompt_embeddings = config
+        .build_text_encoders(prompt.as_str(), uncond_prompt.as_str(), guidance_scale)
         .unwrap();
 
     info!("Building the autoencoder.");
-    let vae = new_config.build_vae().unwrap();
+    let vae = config.build_vae().unwrap();
 
     info!("Building the unet.");
-    let unet = new_config.build_model().unwrap();
+    let unet = config.build_model().unwrap();
 
     info!("starting sampling");
     let timesteps = scheduler.timesteps();
@@ -319,11 +426,11 @@ fn main() {
     };
 
     let mut latents = if let Some(source_fp) = img2img {
-        new_config
+        config
             .build_img2img_latents(&source_fp, &vae, &scheduler, timesteps[t_start])
             .unwrap()
     } else {
-        new_config.build_init_latents(&scheduler).unwrap()
+        config.build_init_latents(&scheduler).unwrap()
     };
 
     for (timestep_index, &timestep) in timesteps.iter().enumerate() {
@@ -332,13 +439,27 @@ fn main() {
         }
 
         let start_time = std::time::Instant::now();
-        let latent_model_input = latents.clone();
+
+        let latent_model_input = if guidance_scale > 0.0 {
+            Tensor::cat(&[&latents, &latents], 0).unwrap()
+        } else {
+            latents.clone()
+        };
+
         let latent_model_input = scheduler
             .scale_model_input(latent_model_input, timestep)
             .unwrap();
+        
         let noise_pred = unet
             .forward(&latent_model_input, timestep as f64, &prompt_embeddings)
             .unwrap();
+        let noise_pred = if guidance_scale > 0.0 {
+            let noise_pred = noise_pred.chunk(2, 0).unwrap();
+            let (noise_pred_uncond, noise_pred_text) = (&noise_pred[0], &noise_pred[1]);
+            (noise_pred_uncond + ((noise_pred_text - noise_pred_uncond).unwrap() * guidance_scale)).unwrap()
+        } else {
+            noise_pred
+        };
 
         latents = scheduler.step(&noise_pred, timestep, &latents).unwrap();
         let dt = start_time.elapsed().as_secs_f32();
@@ -350,7 +471,7 @@ fn main() {
         );
     }
 
-    save_image(&vae, &latents, new_config.vae_scale, &output_filename).unwrap();
+    save_image(&vae, &latents, config.vae_scale, &output_filename).unwrap();
 }
 
 fn save_image(
