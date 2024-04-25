@@ -37,6 +37,12 @@ struct Args {
 
     #[arg(long, default_value = "output.png")]
     save_as: String,
+
+    #[arg(long, value_name = "Base-Image-File")]
+    img2img: Option<String>,
+
+    #[arg(long, default_value_t = 0.7)]
+    img_strength: f32,
 }
 
 /// type alias for a hugginface repository id and filename in that repository.
@@ -142,7 +148,7 @@ impl DiffusionConfig {
         )?)
     }
 
-    pub fn get_init_latents(
+    pub fn build_init_latents(
         &self,
         scheduler: &Box<dyn stable_diffusion::schedulers::Scheduler>,
     ) -> Result<Tensor> {
@@ -156,6 +162,41 @@ impl DiffusionConfig {
         )?;
         let latents = (latents * scheduler.init_noise_sigma())?;
         Ok(latents.to_dtype(self.dtype)?)
+    }
+
+    pub fn build_img2img_latents(
+        &self,
+        source_filepath: &str,
+        vae: &AutoEncoderKL,
+        scheduler: &Box<dyn stable_diffusion::schedulers::Scheduler>,
+        noise_timestep: usize,
+    ) -> Result<Tensor> {
+        // turn the source image into a latent tensor
+        let img = image::io::Reader::open(source_filepath)?.decode()?;
+
+        let h = img.height();
+        let w = img.width();
+
+        let h = h - h % 32;
+        let w = w - w % 32;
+
+        let img = img.resize_to_fill(w, h, image::imageops::FilterType::CatmullRom);
+        let img = img.to_rgb8();
+        let img = img.into_raw();
+
+        let source_image = Tensor::from_vec(img, (h as usize, w as usize, 3), &self.device)?
+            .permute((2, 0, 1))?
+            .to_dtype(DType::F32)?
+            .affine(2.0 / 255.0, -1.0)?
+            .unsqueeze(0)?
+            .to_dtype(self.dtype)?;
+
+        let latent_dist = vae.encode(&source_image)?;
+        let latents = (latent_dist.sample()? * self.vae_scale)?.to_device(&self.device)?;
+
+        let noise = latents.randn_like(0f64, 1f64)?;
+        let noisey_latents = scheduler.add_noise(&latents, noise, noise_timestep)?;
+        Ok(noisey_latents.to_dtype(self.dtype)?)
     }
 
     fn text_embeddings(
@@ -203,11 +244,6 @@ impl DiffusionConfig {
         )?;
         let text_embeddings = text_model.forward(&tokens)?;
         let text_embeddings = text_embeddings.to_dtype(self.dtype)?;
-
-        // TODO: currently not supporting a batch size greater than 1
-        const BATCH_SIZE: usize = 1;
-        let text_embeddings = text_embeddings.repeat((BATCH_SIZE, 1, 1))?;
-
         Ok(text_embeddings)
     }
 }
@@ -250,6 +286,15 @@ fn main() {
     let uncond_prompt = args.uncond_prompt;
     info!("Output filename: {:?}", output_filename);
 
+    let img_strength = args.img_strength.clamp(0.0, 1.0);
+    let img2img = args.img2img;
+    if let Some(source_file) = &img2img {
+        info!(
+            "Image to image: Strength: {}; Source: {}",
+            img_strength, source_file
+        );
+    }
+
     let new_config =
         DiffusionConfig::new_sdxl_turbo(args.height, args.width, steps, device.clone());
     let scheduler = new_config.build_scheduler().unwrap();
@@ -265,11 +310,22 @@ fn main() {
     info!("Building the unet.");
     let unet = new_config.build_model().unwrap();
 
-    let timesteps = scheduler.timesteps();
-    let mut latents = new_config.get_init_latents(&scheduler).unwrap();
-
     info!("starting sampling");
-    let t_start = 0;
+    let timesteps = scheduler.timesteps();
+    let t_start = if img2img.is_some() {
+        steps - (steps as f32 * img_strength) as usize
+    } else {
+        0
+    };
+
+    let mut latents = if let Some(source_fp) = img2img {
+        new_config
+            .build_img2img_latents(&source_fp, &vae, &scheduler, timesteps[t_start])
+            .unwrap()
+    } else {
+        new_config.build_init_latents(&scheduler).unwrap()
+    };
+
     for (timestep_index, &timestep) in timesteps.iter().enumerate() {
         if timestep_index < t_start {
             continue;
@@ -286,7 +342,12 @@ fn main() {
 
         latents = scheduler.step(&noise_pred, timestep, &latents).unwrap();
         let dt = start_time.elapsed().as_secs_f32();
-        info!("Iteration #{} (Timestep: {}) completed in {:.2}s...", timestep_index + 1, timestep, dt);
+        info!(
+            "Iteration #{} (Timestep: {}) completed in {:.2}s...",
+            timestep_index + 1,
+            timestep,
+            dt
+        );
     }
 
     save_image(&vae, &latents, new_config.vae_scale, &output_filename).unwrap();
