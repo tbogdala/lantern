@@ -30,9 +30,9 @@
 //! }
 //!```
 
+mod quantized_llama;
 mod textgeneratormanager;
 mod textgeneratorsampler;
-mod quantized_llama;
 
 pub use textgeneratormanager::TextGenUpdate;
 pub use textgeneratormanager::TextGenerationParams;

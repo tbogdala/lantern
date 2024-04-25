@@ -313,7 +313,7 @@ fn worker_generate_text(
     let mut process_count = 0;
     let total_chunks = prompt_tokens.len() / params.batch_size + 1;
     for (i, prompt_chunk) in prompt_tokens.chunks(params.batch_size).enumerate() {
-        debug!("Processing prompt batch #{} of {}", i+1, total_chunks);
+        debug!("Processing prompt batch #{} of {}", i + 1, total_chunks);
         let input = Tensor::new(prompt_chunk, &device)?.unsqueeze(0)?;
         let logits = model.forward(&input, process_count)?;
         last_logits = Some(logits.squeeze(0)?);

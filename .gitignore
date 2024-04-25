@@ -1,3 +1,5 @@
 /target
 .vscode/
 .rag_cached.html
+/out-images
+.DS_Store

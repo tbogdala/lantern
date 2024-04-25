@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
-use candle_transformers::quantized_nn::RmsNorm;
-use candle_core::quantized::QTensor;
 use candle_core::quantized::gguf_file;
+use candle_core::quantized::QTensor;
 use candle_core::{DType, Device, IndexOp, Result, Tensor};
 use candle_nn::{Embedding, Module};
+use candle_transformers::quantized_nn::RmsNorm;
 
 // QMatMul wrapper adding some tracing.
 #[derive(Debug, Clone)]
@@ -158,25 +158,19 @@ impl LayerWeights {
         if let Some(mask) = self.masks.get(&(t, u)) {
             Ok(mask.clone())
         } else {
-            let mask: Vec<_> = 
-                (0..t).flat_map(|i| 
-                    (0..u).map(move |j| 
-                        u8::from(j + t > i + u)))
-                    .collect();
+            let mask: Vec<_> = (0..t)
+                .flat_map(|i| (0..u).map(move |j| u8::from(j + t > i + u)))
+                .collect();
             let mask = Tensor::from_slice(&mask, (t, u), &self.sin.device())?;
             self.masks.insert((t, u), mask.clone());
             Ok(mask)
         }
     }
 
-    fn forward_attn(
-        &mut self,
-        x: &Tensor,
-        index_pos: usize,
-    ) -> Result<Tensor> {
+    fn forward_attn(&mut self, x: &Tensor, index_pos: usize) -> Result<Tensor> {
         let (b_sz, seq_len, n_embd) = x.dims3()?;
         let mask = self.mask(seq_len, index_pos + seq_len)?;
-            
+
         let q = self.attention_wq.forward(x)?;
         let k = self.attention_wk.forward(x)?;
         let v = self.attention_wv.forward(x)?;

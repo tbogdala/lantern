@@ -75,7 +75,7 @@ fn main() {
     // if you've used LLMs before, these parameters should all seem familiar. we're going to generate
     // 512 new tokens at most, using the seed provided or generated, based on the prompt we just assembled above.
     // we'll break the prompt up into chunks of 256 tokens if necessary and then we'll set a few
-    // sampler parameters to control how the text is picked. Specifically, we'll turn the temp down to 0.7 for 
+    // sampler parameters to control how the text is picked. Specifically, we'll turn the temp down to 0.7 for
     // less randomness in the answer, disable top_p by setting it to 1.0, use min_p to cull selection to tokens
     // that are within 7.5% of the probability of the most probable token, and then give a slight penalty
     // to repeating tokens.
