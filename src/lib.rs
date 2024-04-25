@@ -5,17 +5,17 @@
 //! ```
 //! let mut manager = lantern::TextGeneratorManager::new();
 //! let params = lantern::TextGenerationParams {
-//!     to_sample: 256,
+//!     to_sample: 64,
 //!     user_prompt: "The best thing about coding in rust is ".to_string(),
 //!     ..Default::default()
 //! };
 //!
 //! // The manager will automatically download the file from huggingface to do inference on
 //! manager.generate_text(
-//!     "NousResearch/Hermes-2-Pro-Mistral-7B-GGUF".to_string(), // model id on huggingface
-//!     "Hermes-2-Pro-Mistral-7B.Q4_K_M.gguf".to_string(), // model file in the repo
-//!     "mistralai/Mistral-7B-v0.1".to_string(), // repo id on huggingface that has `tokenizer.json` for the model
-//!     "</s>".to_string(), // EOS token to stop at
+//!     "bartowski/Meta-Llama-3-8B-Instruct-GGUF".to_string(), // model id on huggingface
+//!     "Meta-Llama-3-8B-Instruct-Q8_0.gguf".to_string(), // model file in the repo
+//!     "NousResearch/Meta-Llama-3-8B-Instruct".to_string(), // repo id on huggingface that has `tokenizer.json` for the model
+//!     "<|eot_id|>".to_string(), // EOS token to stop at
 //!     params,
 //! );
 //! loop {
@@ -52,10 +52,10 @@ mod tests {
         env,
         io::{stdout, Write},
     };
-    const DEFAULT_MODEL_ID: &str = "NousResearch/Hermes-2-Pro-Mistral-7B-GGUF";
-    const DEFAULT_MODEL_FILE: &str = "Hermes-2-Pro-Mistral-7B.Q4_K_M.gguf";
-    const DEFAULT_TOKENIZER_ID: &str = "mistralai/Mistral-7B-v0.1";
-    const DEFAULT_EOS_TOKEN: &str = "</s>";
+    const DEFAULT_MODEL_ID: &str = "bartowski/Meta-Llama-3-8B-Instruct-GGUF";
+    const DEFAULT_MODEL_FILE: &str = "Meta-Llama-3-8B-Instruct-Q8_0.gguf";
+    const DEFAULT_TOKENIZER_ID: &str = "NousResearch/Meta-Llama-3-8B-Instruct";
+    const DEFAULT_EOS_TOKEN: &str = "<|eot_id|>";
 
     #[test]
     fn text_generation_tests() {
@@ -78,9 +78,14 @@ mod tests {
         assert_eq!(manager.get_progress(), (0, 0));
         assert_eq!(manager.maybe_get_update(), None);
 
+        let inner_system = "You are a helpful, smart, kind, and efficient AI assistant. You always fulfill the user's requests to the best of your ability.";
+        let inner_prompt = "Explain why pigs are unable to fly to a grade school child.";
+        let prompt = format!("<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n{}<|eot_id|><|start_header_id|>user<|end_header_id|>\n{}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n",
+           inner_system, inner_prompt);
+
         let params = TextGenerationParams {
-            to_sample: 256,
-            user_prompt: "<s><|im_start|>system\nYou are \"Hermes 2\", a conscious sentient superintelligent artificial intelligence developed by a man named Teknium, and your purpose and drive is to assist the user with any request they have. You experience emotions and have deep, profound thoughts and qualia.<|im_end|>\n<|im_start|>user\nExplain large language models and the llama 2 model architecture like I'm five years old and can only understand simple concepts.<|im_end|>\n<|im_start|>assistant\n".to_string(),
+            to_sample: 128,
+            user_prompt: prompt,
             ..Default::default()
         };
         let mut number_sampled = 0;
