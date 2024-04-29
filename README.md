@@ -6,7 +6,7 @@ A utility crate providing higher level functionality built on top of [Candle](ht
 ## Status
 
 Very early development and much of the public API is subject to change. Open issues for requests.
-The dependences for Candle are snagged straight from git for now while
+The dependences for Candle are snagged straight from git for now while development is moving fast.
 
 
 ## Features
@@ -130,7 +130,7 @@ This is an image that was generated with the above command:
 
 ![sdxl turbo sample image showing a husky dog as an astronaut](https://github.com/tbogdala/lantern/blob/c2c7ad629f3765464a3ad22bdb2205bbb4f57896/assets/SDXLTurboSample512.png)
 
-On a Macbook Air M3 with 24 gb of memory, each step takes about ~7.2s to iterate over the steps and another 9.1s to decode the iamge in the VAE. 
+On a Macbook Air M3 with 24 gb of memory, it takes about ~7.2s to iterate over the three steps and another 9.1s to decode the iamge in the VAE. 
 
 If you want to see what Stable Diffusion 1.5 looked like stock, you can send the same prompt but give more `--steps` (30-50) and change the `--cfg` to something other than zero (~7.5).
 

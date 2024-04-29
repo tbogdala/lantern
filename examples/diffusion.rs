@@ -1,11 +1,10 @@
-use std::{path::PathBuf, time::SystemTime};
+use std::path::PathBuf;
 
 use anyhow::{anyhow, Result};
-use candle_core::{DType, Device, IndexOp, Tensor};
-use candle_transformers::models::stable_diffusion::vae::AutoEncoderKL;
+use candle_core::Tensor;
 use clap::Parser;
-use lantern::DiffusionConfig;
-use log::{debug, info};
+use lantern::{create_fastest_device, DiffusionConfig};
+use log::info;
 
 // This is a copy of what's in the diffusion module, but here we add
 // the clap::ValueEnum implementation which is a dependency only for
@@ -15,7 +14,6 @@ enum SDVersionArg {
     V1_5,
     Turbo,
 }
-
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -30,7 +28,7 @@ struct Args {
     uncond_prompt: String,
 
     #[arg(short, long)]
-    seed: Option<u32>,
+    seed: Option<u64>,
 
     #[arg(long)]
     cfg: Option<f64>,
@@ -60,28 +58,7 @@ fn main() {
     let args = Args::parse();
 
     // we seed the sampler based on the current time
-    let seed = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos() as u32;
-    let seed = args.seed.unwrap_or(seed);
-    info!("Seed: {}", seed);
-
-    // get the configured device type
-    #[cfg(feature = "cuda")]
-    let device = Device::new_cuda(0).unwrap();
-    #[cfg(feature = "metal")]
-    let device = Device::new_metal(0).unwrap();
-    #[cfg(not(feature = "cuda"))]
-    #[cfg(not(feature = "metal"))]
-    let device = Device::Cpu;
-    debug!(
-        "Device is: cpu={} | cuda={} | metal={}",
-        device.is_cpu(),
-        device.is_cuda(),
-        device.is_metal()
-    );
-    device.set_seed(seed as u64).unwrap();
+    let device = create_fastest_device(args.seed).unwrap();
 
     // default cfg to 0.0 for Turbo, 7.5 for everything else, or use specfied parameter
     let guidance_scale = if let Some(cfg) = args.cfg {
@@ -110,7 +87,7 @@ fn main() {
         .prompt
         .unwrap_or("A giant red crustacean on a beach. Highly stylized.".to_owned());
     let uncond_prompt = args.uncond_prompt;
-    
+
     // we do a little fancy work with the filename to put iteration numbers at the
     // end of the filename passed in as a parameter if that one already exists.
     let output_filename = get_available_filename(args.save_as.as_str()).unwrap();
@@ -128,23 +105,27 @@ fn main() {
         );
     }
 
-    let config = match args.sd_ver {
-        SDVersionArg::V1_5 => DiffusionConfig::new_sd15(args.height, args.width, steps, device.clone()),
-        SDVersionArg::Turbo => DiffusionConfig::new_sdxl_turbo(args.height, args.width, steps, device.clone())
+    let diffuser = match args.sd_ver {
+        SDVersionArg::V1_5 => {
+            DiffusionConfig::new_sd15(args.height, args.width, steps, device.clone())
+        }
+        SDVersionArg::Turbo => {
+            DiffusionConfig::new_sdxl_turbo(args.height, args.width, steps, device.clone())
+        }
     };
 
-    let scheduler = config.build_scheduler().unwrap();
+    let scheduler = diffuser.build_scheduler().unwrap();
 
     info!("Building the clip transformers and tokenizing the prompts.");
-    let prompt_embeddings = config
+    let prompt_embeddings = diffuser
         .build_text_encoders(prompt.as_str(), uncond_prompt.as_str(), guidance_scale)
         .unwrap();
 
     info!("Building the autoencoder.");
-    let vae = config.build_vae().unwrap();
+    let vae = diffuser.build_vae().unwrap();
 
     info!("Building the unet.");
-    let unet = config.build_model().unwrap();
+    let unet = diffuser.build_model().unwrap();
 
     info!("starting sampling");
     let timesteps = scheduler.timesteps();
@@ -155,11 +136,11 @@ fn main() {
     };
 
     let mut latents = if let Some(source_fp) = img2img {
-        config
+        diffuser
             .build_img2img_latents(&source_fp, &vae, &scheduler, timesteps[t_start])
             .unwrap()
     } else {
-        config.build_init_latents(&scheduler).unwrap()
+        diffuser.build_init_latents(&scheduler).unwrap()
     };
 
     for (timestep_index, &timestep) in timesteps.iter().enumerate() {
@@ -178,14 +159,15 @@ fn main() {
         let latent_model_input = scheduler
             .scale_model_input(latent_model_input, timestep)
             .unwrap();
-        
+
         let noise_pred = unet
             .forward(&latent_model_input, timestep as f64, &prompt_embeddings)
             .unwrap();
         let noise_pred = if guidance_scale > 0.0 {
             let noise_pred = noise_pred.chunk(2, 0).unwrap();
             let (noise_pred_uncond, noise_pred_text) = (&noise_pred[0], &noise_pred[1]);
-            (noise_pred_uncond + ((noise_pred_text - noise_pred_uncond).unwrap() * guidance_scale)).unwrap()
+            (noise_pred_uncond + ((noise_pred_text - noise_pred_uncond).unwrap() * guidance_scale))
+                .unwrap()
         } else {
             noise_pred
         };
@@ -200,36 +182,26 @@ fn main() {
         );
     }
 
-    save_image(&vae, &latents, config.vae_scale, &output_filename).unwrap();
-}
-
-fn save_image(
-    vae: &AutoEncoderKL,
-    latents: &Tensor,
-    vae_scale: f64,
-    final_image: &PathBuf,
-) -> Result<()> {
     info!("Decoding latents with the vae...");
     let start_time = std::time::Instant::now();
-    let images = vae.decode(&(latents / vae_scale)?)?;
-    let images = ((images / 2.)? + 0.5)?.to_device(&Device::Cpu)?;
-    let images = (images.clamp(0f32, 1.)? * 255.)?.to_dtype(DType::U8)?;
-    let img = images.i(0)?;
-
+    let pixels = diffuser.decode_latents(&latents, &vae).unwrap();
     info!(
         "Imaged finished decoding in {:.2}s; saving to: {:?}",
         start_time.elapsed().as_secs_f32(),
-        final_image
+        output_filename
     );
-    let p = std::path::Path::new(final_image);
-    let (channel, height, width) = img.dims3()?;
-    if channel != 3 {
-        return Err(anyhow!(
-            "save_image expects an input of shape (3, height, width)"
-        ));
-    }
-    let img = img.permute((1, 2, 0))?.flatten_all()?;
-    let pixels = img.to_vec1::<u8>()?;
+
+    // finally, save the result out to a file
+    save_image(pixels, args.width, args.height, &output_filename).unwrap();
+}
+
+fn save_image(
+    pixels: Vec<u8>,
+    width: usize,
+    height: usize,
+    output_filename: &PathBuf,
+) -> Result<()> {
+    let p = std::path::Path::new(output_filename);
     let image: image::ImageBuffer<image::Rgb<u8>, Vec<u8>> =
         match image::ImageBuffer::from_raw(width as u32, height as u32, pixels) {
             Some(image) => image,

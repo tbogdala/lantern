@@ -35,13 +35,52 @@ mod quantized_llama;
 mod textgeneratormanager;
 mod textgeneratorsampler;
 
-pub use diffusion::StableDiffusionVersion;
-pub use diffusion::DiffusionConfig;
+use std::time::SystemTime;
 
+use anyhow::Result;
+use candle_core::Device;
+pub use diffusion::DiffusionConfig;
+pub use diffusion::StableDiffusionVersion;
+
+use log::debug;
 pub use textgeneratormanager::TextGenUpdate;
 pub use textgeneratormanager::TextGenerationParams;
 pub use textgeneratormanager::TextGeneratorManager;
 pub use textgeneratorsampler::TextGeneratorSampler;
+
+/// Creates the device for the `candle` library that is used internally for all of
+/// this work, and will use CUDA or Metal if the binary was compiled with those features.
+/// The function optionally takes a seed to set on the device and if not
+/// specified, it will be seeded based on current time.
+pub fn create_fastest_device(seed: Option<u64>) -> Result<Device> {
+    // get the configured device type
+    #[cfg(feature = "cuda")]
+    let device = Device::new_cuda(0)?;
+    #[cfg(feature = "metal")]
+    let device = Device::new_metal(0)?;
+    #[cfg(not(feature = "cuda"))]
+    #[cfg(not(feature = "metal"))]
+    let device = Device::Cpu;
+
+    debug!(
+        "Device is: cpu={} | cuda={} | metal={}",
+        device.is_cpu(),
+        device.is_cuda(),
+        device.is_metal()
+    );
+
+    let seed = seed.unwrap_or_else(|| {
+        SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos() as u64
+    });
+    // Why are we doing this? Because metal only supports u32 seeding. -_-
+    let clipped_seed: u32 = seed as u32;
+    device.set_seed(clipped_seed as u64)?;
+
+    Ok(device)
+}
 
 #[cfg(test)]
 mod tests {

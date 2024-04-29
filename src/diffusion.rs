@@ -1,7 +1,9 @@
 use anyhow::{anyhow, Result};
-use candle_core::{DType, Device, Tensor, D};
+use candle_core::{DType, Device, IndexOp, Tensor, D};
 use candle_nn::Module;
-use candle_transformers::models::stable_diffusion::{self, clip, unet_2d::UNet2DConditionModel, vae::AutoEncoderKL, StableDiffusionConfig};
+use candle_transformers::models::stable_diffusion::{
+    self, clip, unet_2d::UNet2DConditionModel, vae::AutoEncoderKL, StableDiffusionConfig,
+};
 use hf_hub::api::sync::Api;
 use tokenizers::Tokenizer;
 
@@ -70,7 +72,7 @@ impl DiffusionConfig {
             vae_scale: 0.18215,
         }
     }
-    
+
     /// creates a new configuration set for SDXL Turbo use. This model is tuned for 512x512.
     pub fn new_sdxl_turbo(height: usize, width: usize, steps: usize, device: Device) -> Self {
         Self {
@@ -113,7 +115,12 @@ impl DiffusionConfig {
         Ok(self.inner_config.build_scheduler(self.steps)?)
     }
 
-    pub fn build_text_encoders(&self, prompt: &str, uncond_prompt: &str, cfg: f64) -> Result<Tensor> {
+    pub fn build_text_encoders(
+        &self,
+        prompt: &str,
+        uncond_prompt: &str,
+        cfg: f64,
+    ) -> Result<Tensor> {
         let embeddings1 = self.text_embeddings(
             prompt,
             uncond_prompt,
@@ -125,7 +132,7 @@ impl DiffusionConfig {
 
         if self.sd_ver == StableDiffusionVersion::V1_5 {
             Ok(embeddings1)
-         } else {
+        } else {
             let embeddings2 = self.text_embeddings(
                 prompt,
                 uncond_prompt,
@@ -135,7 +142,7 @@ impl DiffusionConfig {
                 self.inner_config.clip2.as_ref(),
             )?;
             Ok(Tensor::cat(&[embeddings1, embeddings2], D::Minus1)?)
-        } 
+        }
     }
 
     pub fn build_vae(&self) -> Result<AutoEncoderKL> {
@@ -273,12 +280,31 @@ impl DiffusionConfig {
                 uncond_tokens.push(pad_id);
             }
 
-            let uncond_tokens = Tensor::new(uncond_tokens.as_slice(), &self.device)?.unsqueeze(0)?;
+            let uncond_tokens =
+                Tensor::new(uncond_tokens.as_slice(), &self.device)?.unsqueeze(0)?;
             let uncond_embeddings = text_model.forward(&uncond_tokens)?;
 
             Ok(Tensor::cat(&[uncond_embeddings, text_embeddings], 0)?.to_dtype(self.dtype)?)
         } else {
             Ok(text_embeddings.to_dtype(self.dtype)?)
-        } 
+        }
+    }
+
+    pub fn decode_latents(&self, latents: &Tensor, vae: &AutoEncoderKL) -> Result<Vec<u8>> {
+        let images = vae.decode(&(latents / self.vae_scale)?)?;
+        let images = ((images / 2.)? + 0.5)?.to_device(&Device::Cpu)?;
+        let images = (images.clamp(0f32, 1.)? * 255.)?.to_dtype(DType::U8)?;
+        let img = images.i(0)?;
+
+        let (channel, _height, _width) = img.dims3()?;
+        if channel != 3 {
+            return Err(anyhow!(
+                "save_image expects an input of shape (3, height, width)"
+            ));
+        }
+
+        let img = img.permute((1, 2, 0))?.flatten_all()?;
+        let pixels = img.to_vec1::<u8>()?;
+        Ok(pixels)
     }
 }
