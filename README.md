@@ -13,13 +13,13 @@ The dependences for Candle are snagged straight from git for now while developme
 
 - [x] `TextGeneratorManager` to handle text generation requests with a LLM on a worker thread
 - [x] More robust LLM sampling with `TextGeneratorSampler`
-- [x] Enhanced quantized llama handling compared to candle's impelmentation: can processed prompts in 
-      batches, max context length is pulled from the gguf file.
+- [x] Enhanced quantized llama handling compared to candle's implementation: can processed prompts in 
+      batches, max context length is pulled from the GGUF file.
 - [x] Easier abstraction to use image generators based on stable diffusion. Currently supports
       SD v1.5 and SDXL Turbo.
 
 
-## Buiding From Source
+## Building From Source
 
 Simply cloning the repository and choosing a hardware acceleration feature should be enough to build.
 
@@ -40,21 +40,21 @@ Examples can be run simply through cargo. Both examples and tests be configured 
 for the models to use. For example the following four environment variables can override the default settings
 in examples and tests:
 
-* `LANTERN_MODEL_ID`: the huggingface model repo id to use
+* `LANTERN_MODEL_ID`: the HuggingFace model repo id to use
 * `LANTERN_MODEL_FILE`: the file name within the model repo to download
-* `LANTERN_TOKENIZER_ID`: the huggingface repo id that has the `tokenizer.json` file for the model
+* `LANTERN_TOKENIZER_ID`: the HuggingFace repo id that has the `tokenizer.json` file for the model
 * `LANTERN_EOS_STRING`: the EOS string to detect end of prediction; must be able to be tokenized.
 
 
 ### Basic Text Generation
 
-The following is how to run the basic example with `cuda` accelleration; switch to `metal` on Mac.
+The following is how to run the basic example with `cuda` acceleration; switch to `metal` on Mac.
 
 ```bash
 cargo run --example basic --release --features cuda
 ```
 
-The following is the block of text that was the output of running this command (block formatting added manually:
+The following is the block of text that was the output of running this command (block formatting added manually):
 
 ```
 Default Prompt:
@@ -105,7 +105,7 @@ So, that's what large language models and the LLaMa 3 model architecture are lik
 Pretty cool, right?<|eot_id|>
 ```
 
-On a Macbook Air M3 with 24 gb of memory, this block is generated at ~7 tokens/s.
+On a MacBook Air M3 with 24 GB of memory, this block is generated at ~7 tokens/s.
 
 Should you wish to use a prompt in a file, and you use an OS with a real shell, you can pass the
 prompt in as `--prompt "$(cat ~/test_prompt.txt)"`. If it's long, you can even batch process the prompts
@@ -128,9 +128,9 @@ cargo run --release --features cuda --example diffusion -- -p "A surreal three-q
 
 This is an image that was generated with the above command:
 
-![sdxl turbo sample image showing a husky dog as an astronaut](https://github.com/tbogdala/lantern/blob/c2c7ad629f3765464a3ad22bdb2205bbb4f57896/assets/SDXLTurboSample512.png)
+![SDXL turbo sample image showing a husky dog as an astronaut](https://github.com/tbogdala/lantern/blob/c2c7ad629f3765464a3ad22bdb2205bbb4f57896/assets/SDXLTurboSample512.png)
 
-On a Macbook Air M3 with 24 gb of memory, it takes about ~7.2s to iterate over the three steps and another 9.1s to decode the iamge in the VAE. 
+On a MacBook Air M3 with 24 GB of memory, it takes about ~7.2s to iterate over the three steps and another 9.1s to decode the image in the VAE. 
 
 If you want to see what Stable Diffusion 1.5 looked like stock, you can send the same prompt but give more `--steps` (30-50) and change the `--cfg` to something other than zero (~7.5).
 
