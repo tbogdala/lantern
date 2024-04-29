@@ -202,6 +202,12 @@ fn save_image(
     output_filename: &PathBuf,
 ) -> Result<()> {
     let p = std::path::Path::new(output_filename);
+
+    // make sure the parent directory exists
+    if let Some(dir) = p.parent() {
+        std::fs::create_dir_all(dir)?
+    }
+
     let image: image::ImageBuffer<image::Rgb<u8>, Vec<u8>> =
         match image::ImageBuffer::from_raw(width as u32, height as u32, pixels) {
             Some(image) => image,

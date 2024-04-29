@@ -106,6 +106,7 @@ Pretty cool, right?<|eot_id|>
 ```
 
 On a MacBook Air M3 with 24 GB of memory, this block is generated at ~7 tokens/s.
+On a Windows desktop with a 4090 and everything on VRAM, this example runs at 24.6 tokens/s.
 
 Should you wish to use a prompt in a file, and you use an OS with a real shell, you can pass the
 prompt in as `--prompt "$(cat ~/test_prompt.txt)"`. If it's long, you can even batch process the prompts
@@ -130,7 +131,7 @@ This is an image that was generated with the above command:
 
 ![SDXL turbo sample image showing a husky dog as an astronaut](https://github.com/tbogdala/lantern/blob/c2c7ad629f3765464a3ad22bdb2205bbb4f57896/assets/SDXLTurboSample512.png)
 
-On a MacBook Air M3 with 24 GB of memory, it takes about ~7.2s to iterate over the three steps and another 9.1s to decode the image in the VAE. 
+On a MacBook Air M3 with 24 GB of memory, it takes about ~7.2s to iterate over the three steps and another 9.1s to decode the image in the VAE. On a Windows desktop with a 4090, it takes about 350ms to iterate over the three steps and another 0.2s to decode the image in the VAE.
 
 If you want to see what Stable Diffusion 1.5 looked like stock, you can send the same prompt but give more `--steps` (30-50) and change the `--cfg` to something other than zero (~7.5).
 
