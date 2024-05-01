@@ -9,7 +9,7 @@ use lantern::{TextGenUpdate, TextGenerationParams, TextGeneratorManager};
 use log::info;
 
 // setup the default model, quant size, tokenizer and EOS string
-const DEFAULT_MODEL_ID: &str = "bartowski/Meta-Llama-3-8B-Instruct-old-GGUF";
+const DEFAULT_MODEL_ID: &str = "bartowski/Meta-Llama-3-8B-Instruct-GGUF";
 const DEFAULT_MODEL_FILE: &str = "Meta-Llama-3-8B-Instruct-Q8_0.gguf";
 const DEFAULT_TOKENIZER_ID: &str = "NousResearch/Meta-Llama-3-8B-Instruct";
 const DEFAULT_EOS_TOKEN: &str = "<|eot_id|>";
